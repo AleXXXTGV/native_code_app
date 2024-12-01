@@ -1,10 +1,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <uses-permission android:name="android.permission.RECEIVE_SMS"/>
-    <uses-permission android:name="android.permission.READ_SMS"/>  
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- this pemission is for auto start service after reboot -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
     <application
         android:label="native_code_app"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <service android:label="notifications" android:name="notification.listener.service.NotificationListener"
+        android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true">
+                <intent-filter>
+                    <action android:name="android.service.notification.NotificationListenerService" />
+                </intent-filter>
+        </service>
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
