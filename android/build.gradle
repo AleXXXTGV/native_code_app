@@ -2,6 +2,7 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        jcenter() // Добавление этого репозитория может помочь найти зависимые библиотеки
     }
 }
 

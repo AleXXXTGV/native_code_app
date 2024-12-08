@@ -1,13 +1,38 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <!-- this pemission is for auto start service after reboot -->
+    <!-- Автозапуск сервиса после перезагрузки -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <!-- Разрешение для доступа к интернету -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>
+     <!-- Разрешение для получения состояния WiFi -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+
+    <!-- Разрешение для изменения состояния WiFi (если нужно) -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+
+    <!-- Разрешение для использования камеры -->
+    <uses-permission android:name="android.permission.CAMERA"/>
+
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.BATTERY_STATS"/>
+
+    <uses-permission android:name="android.permission.RECEIVE_SMS"/>
+    <uses-permission android:name="android.permission.READ_SMS"/>  
+
     <application
-        android:label="native_code_app"
+        android:label="Flacko Pay"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:usesCleartextTraffic="true">
+
+        <!-- Сервис уведомлений -->
         <service android:label="notifications" android:name="notification.listener.service.NotificationListener"
         android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true">
                 <intent-filter>
@@ -15,6 +40,7 @@
                 </intent-filter>
         </service>
 
+        <!-- Основная Activity приложения -->
         <activity
             android:name=".MainActivity"
             android:exported="true"

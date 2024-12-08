@@ -12,14 +12,45 @@ dependencies:
   intl: ^0.20.1
   notification_listener_service: ^0.3.4
   flutter_svg: ^2.0.16
+  shared_preferences: ^2.0.15
+  fluttertoast: ^8.2.1
+  mobile_scanner: ^6.0.2
+  permission_handler: ^10.2.0
+  flutter_native_splash: ^2.4.3
+  android_intent_plus: ^5.2.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.1
 
 flutter:
   uses-material-design: true
   assets:
     - assets/images/logo.svg
+    - assets/images/background_mainpage_logo.svg
     - assets/images/background_logo.svg
+    - assets/images/splash_logo.png
+  fonts:
+    - family: Aclonica
+      fonts:
+        - asset: assets/fonts/Aclonica.ttf
+
+flutter_native_splash:
+  color: "#EBF0F5"  # Цвет фона заставки
+  image: assets/images/splash_logo.png  # Путь к твоему логотипу, убедись, что он 1152x1152 и без фона
+  android_12:
+    image: assets/images/splash_logo.png  # Используй тот же логотип для Android 12 и выше
+    color: "#EBF0F5"  # Цвет фона заставки
+
+
+  
+flutter_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  image_path: "assets/logo.png"  # Путь к логотипу для iOS
+  min_sdk_android: 21  # Минимальная версия Android SDK (опционально)
+  adaptive_icon_background: "#EBF0F5"  # Цвет фона адаптивной иконки
+  adaptive_icon_foreground: "assets/logo.png"  # Логотип для переднего плана адаптивной иконки
