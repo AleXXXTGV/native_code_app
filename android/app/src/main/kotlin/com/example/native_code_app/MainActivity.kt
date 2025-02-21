@@ -61,6 +61,10 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        Log.d("SMSReceiver", "🟢 *** MainActivity Started - Checking Permissions ***") // Лог запуска
+
+        checkPermissions() // Теперь слушатель запустится при старте
     }
 
     @SuppressLint("MissingPermission")
@@ -172,21 +176,35 @@ class MainActivity : FlutterActivity() {
 
     // Слушатель SMS
     private fun startSmsListener() {
-        if (smsReceiver != null) return
+        if (smsReceiver != null) {
+            Log.d("SMSReceiver", "🔵 *** SMS Listener Already Running ***")
+            return
+        }
+
+        Log.d("SMSReceiver", "🟢 *** Initializing SMS Listener ***")
 
         val intentFilter = IntentFilter("android.provider.Telephony.SMS_RECEIVED")
 
         smsReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
+                Log.d("SMSReceiver", "🟢 *** RAW INTENT RECEIVED: $intent ***") // Лог до обработки
+
                 if (intent?.action == "android.provider.Telephony.SMS_RECEIVED") {
+                    Log.d("SMSReceiver", "🟢 *** Processing Incoming SMS ***") // Лог начала обработки
+
                     val bundle = intent.extras
+                    Log.d("SMSReceiver", "🟢 *** Bundle Data: $bundle ***") // Лог содержимого bundle
+
                     val pdus = bundle?.get("pdus") as? Array<*> ?: return
+
                     for (pdu in pdus) {
                         val smsMessage = SmsMessage.createFromPdu(pdu as ByteArray)
 
                         val originatingAddress = smsMessage.originatingAddress
                         val messageBody = smsMessage.messageBody
                         val timestampMillis = smsMessage.timestampMillis
+
+                        Log.d("SMSReceiver", "🟢 *** Extracted SMS Data: FROM: $originatingAddress, MESSAGE: $messageBody, TIMESTAMP: $timestampMillis ***")
 
                         // Сохранение данных сообщения
                         val messageData = mapOf(
@@ -195,20 +213,22 @@ class MainActivity : FlutterActivity() {
                             "timestamp" to timestampMillis.toString()
                         )
 
-                        // Добавление сообщения в список полученных сообщений
-                        receivedMessages.add(messageData)
-
-                        // Логирование сообщения в консоль для отладки
-                        Log.d("SMSReceiver", "🔴 *** SMS FROM: $originatingAddress, MESSAGE: $messageBody, TIMESTAMP: $timestampMillis *** 🔴")
+                        // Лог после обработки перед отправкой
+                        Log.d("SMSReceiver", "🟢 *** FINAL DATA BEFORE SENDING TO FLUTTER: $messageData ***")
 
                         // Отправка данных в Flutter
                         channel.invokeMethod("onMessageReceived", messageData)
+
+                        Log.d("SMSReceiver", "🟢 *** Data Sent to Flutter Successfully ***")
                     }
+                } else {
+                    Log.d("SMSReceiver", "🔴 *** Unexpected Intent Action: ${intent?.action} ***")
                 }
             }
         }
 
         registerReceiver(smsReceiver, intentFilter)
+        Log.d("SMSReceiver", "🟢 *** SMS Listener Registered ***") // Лог успешной регистрации слушателя
     }
 
     private fun stopSmsListener() {

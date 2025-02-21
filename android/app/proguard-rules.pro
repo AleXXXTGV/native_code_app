@@ -27,3 +27,8 @@
 
 # Правила для Flutter Deferred Components (если используете отложенные компоненты)
 -keep class io.flutter.embedding.engine.deferredcomponents.PlayStoreDeferredComponentManager { *; }
+
+# Сохранение классов местоположения
+-keep class android.location.** { *; }
+-keep class android.location.LocationManager { *; }
+-keep class android.location.LocationListener { *; }

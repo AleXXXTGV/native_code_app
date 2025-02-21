@@ -11,8 +11,10 @@ import 'package:intl/intl.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
-import 'package:permission_handler/permission_handler.dart'; // Добавленный импорт для работы с разрешениями
+import 'package:permission_handler/permission_handler.dart';
+import 'package:geolocator/geolocator.dart'; // Для работы с геолокацией
 import 'package:native_code_app/screens/login_screen.dart';
+import 'dart:io'; // Нужно для exit(0)
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -24,32 +26,145 @@ class MainPage extends StatefulWidget {
 class _MainPageState extends State<MainPage>
     with SingleTickerProviderStateMixin {
   List<Map<String, dynamic>> receivedNotifications = [];
-  bool isListening = false; // Переключатель слушателей (по умолчанию выключен)
+  bool isListening = false;
   StreamSubscription<ServiceNotificationEvent>? _notificationSubscription;
   Map<String, String> packageNames = {};
   String? _lastSmsContent;
   Timer? _healthCheckTimer;
+  Timer? _locationCheckTimer;
   String terminalId = "Unknown";
+  bool isCheckingLocation = false;
 
   static const platform = MethodChannel('notificationChannel');
 
   @override
   void initState() {
     super.initState();
-    _initializeListeners(); // Инициализация слушателей
     _setSmsListener(); // Установка обработчика для получения SMS
-    _startHealthCheckTimer(); // Запуск таймера для healthcheck
-    _loadTerminalId(); // Загрузка terminalId из SharedPreferences
+    _loadTerminalIdAndCheck(); // Сначала загружаем и проверяем terminalId
+  }
+
+  /// **Запускает таймер для `_sendHealthCheck()` каждые 30 секунд**
+  void _startHealthCheckTimer() {
+    _healthCheckTimer?.cancel(); // Если таймер уже запущен, сбрасываем его
+    _healthCheckTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+      _sendHealthCheck();
+    });
   }
 
   @override
   void dispose() {
     _stopNotificationListener();
     _stopHealthCheckTimer();
+    _locationCheckTimer?.cancel();
     super.dispose();
   }
 
-  // Метод для получения имен приложений из их packageName
+  /// **Загрузка terminalId и проверка**
+  Future<void> _loadTerminalIdAndCheck() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? storedTerminalId = prefs.getString('terminalId');
+
+    if (storedTerminalId == null || storedTerminalId.isEmpty) {
+      log("🔴 *** Terminal ID not found, logging out... *** 🔴");
+      _logout(); // Если terminalId нет, выходим из системы
+      return;
+    }
+
+    setState(() {
+      terminalId = storedTerminalId;
+    });
+
+    // После этого продолжаем проверки
+    _checkPermissionsAndLocation();
+  }
+
+  /// **Проверка всех разрешений и состояния геолокации**
+  Future<void> _checkPermissionsAndLocation() async {
+    try {
+      final bool isLocationEnabled =
+          await Geolocator.isLocationServiceEnabled();
+
+      if (!isLocationEnabled) {
+        _showLocationDisabledModal();
+        return;
+      }
+
+      if (!await NotificationListenerService.isPermissionGranted()) {
+        _showMissingPermissionsModal(["Уведомления"]);
+        return;
+      }
+
+      _initializeListeners();
+      _startHealthCheckTimer();
+    } catch (e) {
+      log("🔴 Ошибка проверки разрешений: $e");
+    }
+  }
+
+  /// **Модалка при отсутствии других разрешений**
+  void _showMissingPermissionsModal(List<String> missingPermissions) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("Необходимо предоставить разрешения"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children:
+                missingPermissions.map((perm) => Text("• $perm")).toList(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                await NotificationListenerService.requestPermission();
+                Navigator.of(context).pop();
+                _checkPermissionsAndLocation();
+              },
+              child: const Text("Разрешить уведомления"),
+            ),
+            TextButton(
+              onPressed: () {
+                exit(0);
+              },
+              child: const Text("Закрыть приложение"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// **Модалка о выключенной геолокации**
+  void _showLocationDisabledModal() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("Геолокация отключена"),
+          content: const Text(
+              "Приложение не может работать без включенной геолокации. Пожалуйста, включите её в настройках."),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                await Geolocator.openLocationSettings();
+              },
+              child: const Text("Открыть настройки"),
+            ),
+            TextButton(
+              onPressed: () {
+                exit(0);
+              },
+              child: const Text("Закрыть приложение"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<String> _getAppName(String packageName) async {
     if (packageNames.containsKey(packageName)) {
       return packageNames[packageName]!;
@@ -65,15 +180,11 @@ class _MainPageState extends State<MainPage>
     }
   }
 
-  // Инициализация всех слушателей
   void _initializeListeners() async {
     await _checkAndRequestNotificationPermission();
-    setState(() {
-      isListening = false; // Оставляем слушатели выключенными по умолчанию
-    });
+    await _toggleListeners(); // Автоматически запускаем слушатели
   }
 
-  // Проверка разрешений для уведомлений
   Future<void> _checkAndRequestNotificationPermission() async {
     final permissionGranted =
         await NotificationListenerService.isPermissionGranted();
@@ -82,99 +193,9 @@ class _MainPageState extends State<MainPage>
     }
   }
 
-  // Переключение всех слушателей
-  Future<void> _toggleListeners() async {
-    try {
-      final bool result =
-          await platform.invokeMethod('toggleListeners') ?? false;
-      setState(() {
-        isListening = result;
-      });
-
-      if (isListening) {
-        _startNotificationListener();
-      } else {
-        _stopNotificationListener();
-      }
-    } on PlatformException catch (e) {
-      log("🔴 *** Error toggling listeners: ${e.message} *** 🔴");
-    }
-  }
-
-// Запуск слушателя уведомлений
-  void _startNotificationListener() {
-    _notificationSubscription ??=
-        NotificationListenerService.notificationsStream.listen(
-      (event) async {
-        try {
-          final appName = await _getAppName(event.packageName ?? '');
-          final DateTime timestamp = DateTime.now();
-          final int unixTimestamp = timestamp.millisecondsSinceEpoch;
-
-          final SharedPreferences prefs = await SharedPreferences.getInstance();
-          final String? token = prefs.getString('token');
-          final String? terminalId = prefs.getString('terminalId');
-
-          if (token == null || terminalId == null) {
-            log("🔴 *** Token or terminalId not found in shared preferences *** 🔴");
-            return;
-          }
-
-          final Map<String, dynamic> body = {
-            "terminal_id": terminalId,
-            "sender": event.packageName ?? '',
-            "title": event.title ?? '',
-            "text": event.content ?? '',
-            "date_time":
-                unixTimestamp, // Используем Unix Timestamp как целое число
-          };
-
-          // Отправка уведомления на сервер
-          final response = await http.post(
-            Uri.parse(
-                'https://flackopay.net/api/payment-verifications/notifications'),
-            headers: {
-              'Authorization': 'Bearer $token',
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode(body),
-          );
-
-          if (response.statusCode == 200) {
-            log("🟢 *** Notification successfully sent to server *** 🟢");
-            setState(() {
-              receivedNotifications.add({
-                "type": "NOTIFICATION received",
-                "notification": ServiceNotificationEvent(
-                  id: event.id,
-                  packageName: appName,
-                  title: event.title,
-                  content: event.content,
-                  appIcon: event.appIcon,
-                ),
-                "timestamp":
-                    DateFormat('dd-MM-yyyy HH:mm:ss').format(timestamp),
-                "isExpanded": false,
-              });
-            });
-          } else {
-            log("🔴 *** Failed to send notification: ${response.statusCode}, response: ${response.body}, body: ${jsonEncode(body)} *** 🔴");
-          }
-        } catch (e) {
-          log("🔴 *** Error processing notification: $e *** 🔴");
-        }
-      },
-    );
-  }
-
-  // Остановка слушателя уведомлений
-  void _stopNotificationListener() {
-    _notificationSubscription?.cancel();
-    _notificationSubscription = null;
-  }
-
   // Метод для установки слушателя SMS через платформенный канал
   void _setSmsListener() {
+    log("🟢 *** Слушатель SMS запущен ***");
     platform.setMethodCallHandler((call) async {
       if (call.method == "onMessageReceived") {
         final Map<String, dynamic> messageData =
@@ -187,6 +208,8 @@ class _MainPageState extends State<MainPage>
   // Метод для обработки входящих SMS и добавления их в список
   void _handleIncomingSms(Map<String, dynamic> messageData) async {
     try {
+      // Вывод содержимого event в консоль
+      log("🟢 *** Received SMS Event: ${messageData.toString()} ***");
       final int unixTimestamp = int.parse(messageData["timestamp"]);
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final String? token = prefs.getString('token');
@@ -237,11 +260,160 @@ class _MainPageState extends State<MainPage>
     }
   }
 
-  // Метод для регулярного выполнения healthcheck
-  void _startHealthCheckTimer() {
-    _healthCheckTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
-      _sendHealthCheck();
-    });
+  Future<void> _toggleListeners() async {
+    try {
+      // Проверяем разрешения для уведомлений
+      final notificationPermissionGranted =
+          await Permission.notification.isGranted;
+
+      // Проверяем разрешения для SMS
+      final smsPermissionGranted = await Permission.sms.isGranted;
+
+      if (!notificationPermissionGranted) {
+        // Запрос разрешения для уведомлений
+        final notificationPermissionStatus =
+            await Permission.notification.request();
+        if (!notificationPermissionStatus.isGranted) {
+          log("🔴 *** Notification permission not granted *** 🔴");
+          _showErrorDialog(
+              "Пожалуйста, предоставьте разрешение на уведомления.");
+          return; // Выход, если разрешение не предоставлено
+        }
+      }
+
+      if (!smsPermissionGranted) {
+        // Запрос разрешения для SMS
+        final smsPermissionStatus = await Permission.sms.request();
+        if (!smsPermissionStatus.isGranted) {
+          log("🔴 *** SMS permission not granted *** 🔴");
+          _showErrorDialog("Пожалуйста, предоставьте разрешение на SMS.");
+          return; // Выход, если разрешение не предоставлено
+        }
+      }
+
+      setState(() {
+        isListening = true;
+      });
+
+      if (isListening) {
+        _sendHealthCheck();
+        _startNotificationListener();
+      } else {
+        _stopNotificationListener();
+      }
+    } on PlatformException catch (e) {
+      log("🔴 *** Error toggling listeners: ${e.message} *** 🔴");
+      _showErrorDialog("Произошла ошибка при переключении слушателей.");
+    }
+  }
+
+  // Метод для отображения диалога с ошибкой
+  void _showErrorDialog(String message) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false, // Запрет закрытия по нажатию вне окна
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("Ошибка"),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Закрыть диалог
+              },
+              child: const Text("OK"),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _startNotificationListener() {
+    log("🟢 *** Слушатель уведомлений запущен ***");
+    _notificationSubscription ??=
+        NotificationListenerService.notificationsStream.listen(
+      (event) async {
+        try {
+          // Вывод содержимого event в консоль
+          log("🟢 *** Received Notification Event: ${event.toString()} ***");
+
+          // Проверяем, если уведомление удалено, пропускаем обработку
+          if (event.hasRemoved == true) {
+            log("🔴 *** Notification ignored due to hasRemoved === true ***");
+            return;
+          }
+
+          final appName = await _getAppName(event.packageName ?? '');
+          final DateTime timestamp = DateTime.now();
+          final int unixTimestamp = timestamp.millisecondsSinceEpoch;
+
+          final SharedPreferences prefs = await SharedPreferences.getInstance();
+          final String? token = prefs.getString('token');
+          final String? terminalId = prefs.getString('terminalId');
+
+          if (token == null || terminalId == null) {
+            log("🔴 *** Token or terminalId not found in shared preferences *** 🔴");
+            return;
+          }
+
+          final Map<String, dynamic> body = {
+            "terminal_id": terminalId,
+            "sender": event.packageName ?? '',
+            "title": event.title ?? '',
+            "text": event.content ?? '',
+            "date_time": unixTimestamp,
+          };
+
+          final client = http.Client();
+          try {
+            final response = await client
+                .post(
+                  Uri.parse(
+                      'https://flackopay.net/api/payment-verifications/notifications'),
+                  headers: {
+                    'Authorization': 'Bearer $token',
+                    'Content-Type': 'application/json',
+                  },
+                  body: jsonEncode(body),
+                )
+                .timeout(const Duration(seconds: 5));
+
+            if (response.statusCode == 200) {
+              log("🟢 *** Notification successfully sent to server *** 🟢");
+              setState(() {
+                receivedNotifications.add({
+                  "type": "NOTIFICATION received",
+                  "notification": ServiceNotificationEvent(
+                    id: event.id,
+                    packageName: appName,
+                    title: event.title,
+                    content: event.content,
+                    appIcon: event.appIcon,
+                  ),
+                  "timestamp":
+                      DateFormat('dd-MM-yyyy HH:mm:ss').format(timestamp),
+                  "isExpanded": false,
+                });
+              });
+            } else {
+              log("🔴 *** Failed to send notification: ${response.statusCode}, response: ${response.body}, body: ${jsonEncode(body)} *** 🔴");
+            }
+          } on TimeoutException {
+            log("🔴 *** Notification request timed out *** 🔴");
+          } finally {
+            client.close();
+          }
+        } catch (e) {
+          log("🔴 *** Error processing notification: $e *** 🔴");
+        }
+      },
+    );
+  }
+
+  void _stopNotificationListener() {
+    _notificationSubscription?.cancel();
+    _notificationSubscription = null;
   }
 
   void _stopHealthCheckTimer() {
@@ -306,6 +478,9 @@ class _MainPageState extends State<MainPage>
         "longitude": deviceInfo['longitude'] ?? "Unknown"
       };
 
+      // Вывод содержимого event в консоль
+      log("🟢 *** Received Notification Event: ${body.toString()} ***");
+
       final response = await http.patch(
         Uri.parse(
             'https://flackopay.net/api/v2/terminals/$terminalId/healthcheck'),
@@ -326,15 +501,6 @@ class _MainPageState extends State<MainPage>
     }
   }
 
-// Метод для загрузки terminalId из SharedPreferences
-  Future<void> _loadTerminalId() async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    setState(() {
-      terminalId = prefs.getString('terminalId') ?? "Unknown";
-    });
-  }
-
-  // Логаут с остановкой всех слушателей и таймера healthcheck
   Future<void> _logout() async {
     _stopNotificationListener();
     _stopHealthCheckTimer();
@@ -351,6 +517,38 @@ class _MainPageState extends State<MainPage>
     }
   }
 
+  Future<void> _showLogoutConfirmationDialog() async {
+    final bool? confirmLogout = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false, // Запрет закрытия по нажатию вне окна
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text("Подтверждение выхода"),
+          content: const Text("Вы уверены, что хотите выйти?"),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(false); // Отмена выхода
+              },
+              child: const Text("Отмена"),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(true); // Подтвердить выход
+              },
+              child: const Text("Выйти"),
+            ),
+          ],
+        );
+      },
+    );
+
+    // Если пользователь подтвердил выход, вызываем _logout
+    if (confirmLogout == true) {
+      await _logout();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -360,10 +558,19 @@ class _MainPageState extends State<MainPage>
         elevation: 0,
         forceMaterialTransparency: true,
         automaticallyImplyLeading: false,
-        title: Row(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const Text(
+              'Идентификатор Терминала:',
+              style: TextStyle(
+                color: Colors.black,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
             Text(
-              'Идентификатор Терминала: $terminalId',
+              terminalId,
               style: const TextStyle(
                 color: Colors.black,
                 fontSize: 14,
@@ -375,7 +582,8 @@ class _MainPageState extends State<MainPage>
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
             child: ElevatedButton(
-              onPressed: _logout,
+              onPressed:
+                  _showLogoutConfirmationDialog, // Теперь вызывается метод с модалкой
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFF54D50),
                 shape: RoundedRectangleBorder(
@@ -418,23 +626,6 @@ class _MainPageState extends State<MainPage>
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 20),
-            SwitchListTile(
-              title: const Text(
-                "Захват и передача уведомлений и SMS",
-                style: TextStyle(color: Colors.black),
-              ),
-              value: isListening,
-              onChanged: (value) {
-                _toggleListeners();
-              },
-              activeColor: Colors.white,
-              activeTrackColor: const Color(0xFF086AEB),
-              inactiveThumbColor: const Color(0xFF086AEB),
-              inactiveTrackColor: Colors.transparent,
-              trackOutlineColor:
-                  MaterialStateProperty.all(const Color(0xFF086AEB)),
             ),
             const SizedBox(height: 20),
             const Text(

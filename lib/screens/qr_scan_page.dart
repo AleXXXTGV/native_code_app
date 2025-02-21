@@ -1,3 +1,4 @@
+import 'dart:developer';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -19,6 +20,7 @@ class _QRScanPageState extends State<QRScanPage> {
 
   Future<void> _verifyTerminal() async {
     // Проверяем, что пользователь ввёл terminalId
+    log("Введённый текст в инпут ${_tokenController.text}");
     if (_tokenController.text.isEmpty) {
       return;
     }
@@ -57,6 +59,9 @@ class _QRScanPageState extends State<QRScanPage> {
       );
 
       if (response.statusCode == 200) {
+        // Сохраняем terminalId в SharedPreferences перед переходом на главную страницу
+        await prefs.setString('terminalId', terminalId);
+
         // Если запрос успешный, переходим на главную страницу
         Navigator.pushReplacement(
           context,

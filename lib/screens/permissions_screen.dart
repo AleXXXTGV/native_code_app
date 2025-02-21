@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'dart:ui'; // Для использования эффекта блюра
+import 'dart:ui';
 import 'package:notification_listener_service/notification_listener_service.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:native_code_app/screens/qr_scan_page.dart'; // Добавьте путь к странице со сканером QR
+import 'package:native_code_app/screens/qr_scan_page.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 class PermissionsPage extends StatefulWidget {
@@ -33,25 +33,40 @@ class _PermissionsPageState extends State<PermissionsPage>
     super.dispose();
   }
 
-  // Метод для отслеживания изменений жизненного цикла приложения
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Проверяем разрешение после возврата из настроек
       _checkPermissions();
     }
   }
 
-  // Проверка всех необходимых разрешений
   Future<void> _checkPermissions() async {
+    await _checkPermission(
+      Permission.location,
+      (value) => hasLocationPermission = value,
+    );
+    await _checkPermission(
+      Permission.phone,
+      (value) => hasPhonePermission = value,
+    );
+    await _checkPermission(
+      Permission.camera,
+      (value) => hasCameraPermission = value,
+    );
+    await _checkPermission(
+      Permission.sms,
+      (value) => hasSmsPermission = value,
+    );
     await _checkNotificationPermission();
-    await _checkLocationPermission();
-    await _checkPhonePermission();
-    await _checkCameraPermission();
-    await _checkSmsPermission();
+    setState(() {});
   }
 
-  // Проверка текущего статуса разрешения на уведомления
+  Future<void> _checkPermission(
+      Permission permission, Function(bool) onStatusUpdate) async {
+    final status = await permission.status;
+    onStatusUpdate(status.isGranted);
+  }
+
   Future<void> _checkNotificationPermission() async {
     final permissionGranted =
         await NotificationListenerService.isPermissionGranted();
@@ -60,80 +75,13 @@ class _PermissionsPageState extends State<PermissionsPage>
     });
   }
 
-  // Проверка текущего статуса разрешения на локацию
-  Future<void> _checkLocationPermission() async {
-    final status = await Permission.location.status;
-    setState(() {
-      hasLocationPermission = status.isGranted;
-    });
+  Future<void> _requestPermission(
+      Permission permission, Function(bool) onStatusUpdate) async {
+    final status = await permission.request();
+    onStatusUpdate(status.isGranted);
+    setState(() {});
   }
 
-  // Проверка текущего статуса разрешения на телефон
-  Future<void> _checkPhonePermission() async {
-    final status = await Permission.phone.status;
-    setState(() {
-      hasPhonePermission = status.isGranted;
-    });
-  }
-
-  // Проверка текущего статуса разрешения на камеру
-  Future<void> _checkCameraPermission() async {
-    final status = await Permission.camera.status;
-    setState(() {
-      hasCameraPermission = status.isGranted;
-    });
-  }
-
-  // Проверка текущего статуса разрешения на SMS
-  Future<void> _checkSmsPermission() async {
-    final status = await Permission.sms.status;
-    setState(() {
-      hasSmsPermission = status.isGranted;
-    });
-  }
-
-  // Метод для открытия настроек уведомлений
-  void openNotificationSettings() async {
-    final permissionGranted =
-        await NotificationListenerService.isPermissionGranted();
-    if (!permissionGranted) {
-      await NotificationListenerService.requestPermission();
-    }
-  }
-
-  // Метод для запроса разрешения на локацию
-  Future<void> _requestLocationPermission() async {
-    final status = await Permission.location.request();
-    setState(() {
-      hasLocationPermission = status.isGranted;
-    });
-  }
-
-  // Метод для запроса разрешения на телефон
-  Future<void> _requestPhonePermission() async {
-    final status = await Permission.phone.request();
-    setState(() {
-      hasPhonePermission = status.isGranted;
-    });
-  }
-
-  // Метод для запроса разрешения на камеру
-  Future<void> _requestCameraPermission() async {
-    final status = await Permission.camera.request();
-    setState(() {
-      hasCameraPermission = status.isGranted;
-    });
-  }
-
-  // Метод для запроса разрешения на SMS
-  Future<void> _requestSmsPermission() async {
-    final status = await Permission.sms.request();
-    setState(() {
-      hasSmsPermission = status.isGranted;
-    });
-  }
-
-  // Метод для открытия страницы сканера QR-кода
   void openQRScanner() {
     Navigator.push(
       context,
@@ -153,14 +101,12 @@ class _PermissionsPageState extends State<PermissionsPage>
       backgroundColor: const Color(0xFFEBF0F5),
       body: Stack(
         children: [
-          // Логотип на заднем фоне
           Center(
             child: SvgPicture.asset(
               'assets/images/background_logo.svg',
               width: MediaQuery.of(context).size.width * 0.7,
             ),
           ),
-          // Контент сверху
           Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -181,7 +127,6 @@ class _PermissionsPageState extends State<PermissionsPage>
                     ),
                   ),
                   const SizedBox(height: 30),
-                  // Блок с разрешениями
                   ClipRRect(
                     borderRadius: BorderRadius.circular(10),
                     child: BackdropFilter(
@@ -220,7 +165,6 @@ class _PermissionsPageState extends State<PermissionsPage>
                               ),
                             ),
                             const SizedBox(height: 20),
-                            // Разрешение на уведомления
                             SwitchListTile(
                               title: const Text(
                                 "Захват и передача уведомлений",
@@ -228,12 +172,10 @@ class _PermissionsPageState extends State<PermissionsPage>
                               ),
                               value: isListening,
                               onChanged: (value) async {
-                                if (value) {
-                                  openNotificationSettings();
-                                } else {
-                                  setState(() {
-                                    isListening = false;
-                                  });
+                                if (!isListening) {
+                                  await NotificationListenerService
+                                      .requestPermission();
+                                  _checkNotificationPermission();
                                 }
                               },
                               activeColor: Colors.white,
@@ -244,7 +186,6 @@ class _PermissionsPageState extends State<PermissionsPage>
                                   const Color(0xFF086AEB)),
                             ),
                             const SizedBox(height: 10),
-                            // Разрешение на локацию
                             SwitchListTile(
                               title: const Text(
                                 "Доступ к локации",
@@ -252,12 +193,10 @@ class _PermissionsPageState extends State<PermissionsPage>
                               ),
                               value: hasLocationPermission,
                               onChanged: (value) async {
-                                if (value) {
-                                  await _requestLocationPermission();
-                                } else {
-                                  setState(() {
-                                    hasLocationPermission = false;
-                                  });
+                                if (!hasLocationPermission) {
+                                  await _requestPermission(
+                                      Permission.location,
+                                      (value) => hasLocationPermission = value);
                                 }
                               },
                               activeColor: Colors.white,
@@ -268,7 +207,6 @@ class _PermissionsPageState extends State<PermissionsPage>
                                   const Color(0xFF086AEB)),
                             ),
                             const SizedBox(height: 10),
-                            // Разрешение на доступ к данным мобильного оператора
                             SwitchListTile(
                               title: const Text(
                                 "Доступ к данным оператора",
@@ -276,12 +214,10 @@ class _PermissionsPageState extends State<PermissionsPage>
                               ),
                               value: hasPhonePermission,
                               onChanged: (value) async {
-                                if (value) {
-                                  await _requestPhonePermission();
-                                } else {
-                                  setState(() {
-                                    hasPhonePermission = false;
-                                  });
+                                if (!hasPhonePermission) {
+                                  await _requestPermission(
+                                      Permission.phone,
+                                      (value) => hasPhonePermission = value);
                                 }
                               },
                               activeColor: Colors.white,
@@ -292,7 +228,6 @@ class _PermissionsPageState extends State<PermissionsPage>
                                   const Color(0xFF086AEB)),
                             ),
                             const SizedBox(height: 10),
-                            // Разрешение на камеру
                             SwitchListTile(
                               title: const Text(
                                 "Доступ к камере",
@@ -300,12 +235,10 @@ class _PermissionsPageState extends State<PermissionsPage>
                               ),
                               value: hasCameraPermission,
                               onChanged: (value) async {
-                                if (value) {
-                                  await _requestCameraPermission();
-                                } else {
-                                  setState(() {
-                                    hasCameraPermission = false;
-                                  });
+                                if (!hasCameraPermission) {
+                                  await _requestPermission(
+                                      Permission.camera,
+                                      (value) => hasCameraPermission = value);
                                 }
                               },
                               activeColor: Colors.white,
@@ -316,7 +249,6 @@ class _PermissionsPageState extends State<PermissionsPage>
                                   const Color(0xFF086AEB)),
                             ),
                             const SizedBox(height: 10),
-                            // Разрешение на SMS
                             SwitchListTile(
                               title: const Text(
                                 "Доступ к SMS",
@@ -324,12 +256,10 @@ class _PermissionsPageState extends State<PermissionsPage>
                               ),
                               value: hasSmsPermission,
                               onChanged: (value) async {
-                                if (value) {
-                                  await _requestSmsPermission();
-                                } else {
-                                  setState(() {
-                                    hasSmsPermission = false;
-                                  });
+                                if (!hasSmsPermission) {
+                                  await _requestPermission(
+                                      Permission.sms,
+                                      (value) => hasSmsPermission = value);
                                 }
                               },
                               activeColor: Colors.white,
@@ -345,7 +275,6 @@ class _PermissionsPageState extends State<PermissionsPage>
                     ),
                   ),
                   const SizedBox(height: 30),
-                  // Кнопка продолжить
                   ElevatedButton(
                     onPressed: allPermissionsGranted ? openQRScanner : null,
                     style: ElevatedButton.styleFrom(
