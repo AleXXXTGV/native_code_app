@@ -214,6 +214,20 @@ class _MainPageState extends State<MainPage>
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final String? token = prefs.getString('token');
       final String? terminalId = prefs.getString('terminalId');
+      // Добавляем смс в вёсртку
+      _lastSmsContent = messageData["message"];
+      setState(() {
+        receivedNotifications.add({
+          "type": "SMS received",
+          "sms": {
+            "from": messageData["from"],
+            "message": messageData["message"],
+          },
+          "timestamp": DateFormat('dd-MM-yyyy HH:mm:ss')
+              .format(DateTime.fromMillisecondsSinceEpoch(unixTimestamp)),
+          "isExpanded": false,
+        });
+      });
 
       if (token == null || terminalId == null) {
         log("🔴 *** Token or terminalId not found in shared preferences *** 🔴");
@@ -239,19 +253,6 @@ class _MainPageState extends State<MainPage>
 
       if (response.statusCode == 200) {
         log("🟢 *** SMS successfully sent to server *** 🟢");
-        _lastSmsContent = messageData["message"];
-        setState(() {
-          receivedNotifications.add({
-            "type": "SMS received",
-            "sms": {
-              "from": messageData["from"],
-              "message": messageData["message"],
-            },
-            "timestamp": DateFormat('dd-MM-yyyy HH:mm:ss')
-                .format(DateTime.fromMillisecondsSinceEpoch(unixTimestamp)),
-            "isExpanded": false,
-          });
-        });
       } else {
         log("🔴 *** Failed to send SMS: ${response.statusCode}, response: ${response.body}, body: ${jsonEncode(body)} *** 🔴");
       }
@@ -272,8 +273,8 @@ class _MainPageState extends State<MainPage>
       if (!notificationPermissionGranted) {
         // Запрос разрешения для уведомлений
         final notificationPermissionStatus =
-            await Permission.notification.request();
-        if (!notificationPermissionStatus.isGranted) {
+            await NotificationListenerService.isPermissionGranted();
+        if (!notificationPermissionStatus) {
           log("🔴 *** Notification permission not granted *** 🔴");
           _showErrorDialog(
               "Пожалуйста, предоставьте разрешение на уведомления.");
@@ -351,6 +352,21 @@ class _MainPageState extends State<MainPage>
           final SharedPreferences prefs = await SharedPreferences.getInstance();
           final String? token = prefs.getString('token');
           final String? terminalId = prefs.getString('terminalId');
+          // Добавляем уведомление в вёрстку
+          setState(() {
+            receivedNotifications.add({
+              "type": "NOTIFICATION received",
+              "notification": ServiceNotificationEvent(
+                id: event.id,
+                packageName: appName,
+                title: event.title,
+                content: event.content,
+                appIcon: event.appIcon,
+              ),
+              "timestamp": DateFormat('dd-MM-yyyy HH:mm:ss').format(timestamp),
+              "isExpanded": false,
+            });
+          });
 
           if (token == null || terminalId == null) {
             log("🔴 *** Token or terminalId not found in shared preferences *** 🔴");
@@ -381,21 +397,6 @@ class _MainPageState extends State<MainPage>
 
             if (response.statusCode == 200) {
               log("🟢 *** Notification successfully sent to server *** 🟢");
-              setState(() {
-                receivedNotifications.add({
-                  "type": "NOTIFICATION received",
-                  "notification": ServiceNotificationEvent(
-                    id: event.id,
-                    packageName: appName,
-                    title: event.title,
-                    content: event.content,
-                    appIcon: event.appIcon,
-                  ),
-                  "timestamp":
-                      DateFormat('dd-MM-yyyy HH:mm:ss').format(timestamp),
-                  "isExpanded": false,
-                });
-              });
             } else {
               log("🔴 *** Failed to send notification: ${response.statusCode}, response: ${response.body}, body: ${jsonEncode(body)} *** 🔴");
             }
